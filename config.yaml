@@ -1,0 +1,24 @@
+timezone: Africa/Kampala
+
+api:
+  base_url: https://v3.football.api-sports.io
+  timeout_seconds: 30
+
+model:
+  recent_matches: 8
+  min_training_matches: 150
+  home_advantage: 0.20
+  poisson_max_goals: 8
+  value_edge_threshold: 0.05
+
+leagues:
+  # API-Football league IDs. Add/remove competitions as required.
+  # Examples: Premier League=39, La Liga=140, Serie A=135,
+  # Bundesliga=78, Ligue 1=61.
+  - id: 39
+    name: Premier League
+    season: 2026
+
+report:
+  output_dir: reports
+  top_n: 20
