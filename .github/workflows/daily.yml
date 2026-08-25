@@ -33,4 +33,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: daily-prediction-report
-          path: reports/name: Daily football predictions
+          path: reports/
