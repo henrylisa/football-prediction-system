@@ -1,0 +1,36 @@
+name: Daily football predictions
+
+on:
+  schedule:
+    - cron: "15 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download project
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install packages
+        run: pip install -r requirements.txt
+
+      - name: Create folders
+        run: mkdir -p data models reports
+
+      - name: Run daily prediction
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: python -m app.cli daily
+
+      - name: Save prediction report
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-prediction-report
+          path: reports/name: Daily football predictions
