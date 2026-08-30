@@ -1,57 +1,153 @@
-from pathlib import Path
 import joblib
-import numpy as np
-from scipy.stats import poisson
-from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.pipeline import Pipeline
+import pandas as pd
+
+from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    log_loss,
+    classification_report,
+)
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+from .features import build_training_data
+
 
 FEATURES = [
-    "home_attack","home_defence","home_points","home_xgf","home_xga",
-    "away_attack","away_defence","away_points","away_xgf","away_xga",
-    "goal_diff_form"
+    "home_elo",
+    "away_elo",
+    "elo_difference",
+
+    "home_points_avg",
+    "away_points_avg",
+
+    "home_goals_for_avg",
+    "away_goals_for_avg",
+
+    "home_goals_against_avg",
+    "away_goals_against_avg",
+
+    "home_goal_difference_avg",
+    "away_goal_difference_avg",
+
+    "home_win_rate",
+    "away_win_rate",
 ]
 
-class Predictor:
-    def __init__(self):
-        self.clf = Pipeline([
-            ("scale", StandardScaler()),
-            ("model", HistGradientBoostingClassifier(
-                max_iter=250, learning_rate=0.05, max_leaf_nodes=15,
-                l2_regularization=1.0, random_state=42
-            ))
-        ])
 
-    def fit(self, X, y):
-        self.clf.fit(X[FEATURES], y)
-        return self
+MODEL_PATH = Path("models/1x2_model.joblib")
 
-    def save(self, path="models/model.joblib"):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self.clf, path)
 
-    def load(self, path="models/model.joblib"):
-        self.clf = joblib.load(path)
-        return self
+def train_model():
+    df = build_training_data()
 
-def poisson_markets(lam_h, lam_a, max_goals=8):
-    ph = poisson.pmf(np.arange(max_goals+1), lam_h)
-    pa = poisson.pmf(np.arange(max_goals+1), lam_a)
-    matrix = np.outer(ph, pa)
-    home = np.tril(matrix, -1).sum()
-    draw = np.trace(matrix)
-    away = np.triu(matrix, 1).sum()
-    over25 = sum(matrix[i,j] for i in range(max_goals+1) for j in range(max_goals+1) if i+j >= 3)
-    btts = sum(matrix[i,j] for i in range(1,max_goals+1) for j in range(1,max_goals+1))
-    idx = np.unravel_index(np.argmax(matrix), matrix.shape)
-    return {
-        "home":float(home), "draw":float(draw), "away":float(away),
-        "over25":float(over25), "btts":float(btts),
-        "score":f"{idx[0]}-{idx[1]}"
-    }
+    train = df[df["season"] <= 2023].copy()
+    test = df[df["season"] == 2024].copy()
 
-def expected_goals(row):
-    # Transparent baseline; replace with trained goal-rate models when sufficient xG history exists.
-    lh = max(0.15, 0.58*row.home_xgf + 0.42*row.away_xga + 0.20)
-    la = max(0.15, 0.58*row.away_xgf + 0.42*row.home_xga)
-    return lh, la
+    if len(train) < 100:
+        raise RuntimeError(
+            f"Not enough training data: {len(train)}"
+        )
+
+    if test.empty:
+        raise RuntimeError(
+            "No 2024 test data available."
+        )
+
+    X_train = train[FEATURES]
+    y_train = train["result"]
+
+    X_test = test[FEATURES]
+    y_test = test["result"]
+
+    model = Pipeline(
+        [
+            (
+                "scaler",
+                StandardScaler()
+            ),
+            (
+                "classifier",
+                RandomForestClassifier(
+                    n_estimators=300,
+                    max_depth=8,
+                    min_samples_leaf=5,
+                    random_state=42,
+                    class_weight="balanced",
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+    )
+
+    print(
+        f"Training matches: {len(train)}"
+    )
+
+    print(
+        f"Test matches: {len(test)}"
+    )
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+    probabilities = model.predict_proba(X_test)
+    predictions = model.predict(X_test)
+
+    accuracy = accuracy_score(
+        y_test,
+        predictions
+    )
+
+    loss = log_loss(
+        y_test,
+        probabilities,
+        labels=[0, 1, 2]
+    )
+
+    print()
+    print("1X2 MODEL RESULTS")
+    print("=================")
+    print(
+        f"Accuracy: {accuracy:.4f}"
+    )
+    print(
+        f"Log loss: {loss:.4f}"
+    )
+
+    print()
+    print(
+        classification_report(
+            y_test,
+            predictions,
+            target_names=[
+                "Home",
+                "Draw",
+                "Away",
+            ],
+            zero_division=0,
+        )
+    )
+
+    MODEL_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    joblib.dump(
+        model,
+        MODEL_PATH
+    )
+
+    print(
+        f"Model saved to: {MODEL_PATH}"
+    )
+
+    return model
+
+
+if __name__ == "__main__":
+    train_model()
