@@ -33,6 +33,19 @@ FEATURES = [
 
     "home_win_rate",
     "away_win_rate",
+
+    # Home-specific / away-specific form
+    "home_home_points_avg",
+    "away_away_points_avg",
+
+    "home_home_goals_for_avg",
+    "away_away_goals_for_avg",
+
+    "home_home_goals_against_avg",
+    "away_away_goals_against_avg",
+
+    "home_home_win_rate",
+    "away_away_win_rate",
 ]
 
 

@@ -81,6 +81,49 @@ def form_stats(history, team_id, n=8):
     }
 
 
+def venue_form_stats(history, team_id, venue, n=8):
+    recent = [
+        match
+        for match in history[team_id]
+        if match["venue"] == venue
+    ][-n:]
+
+    if not recent:
+        return {
+            "points": 1.0,
+            "gf": 1.0,
+            "ga": 1.0,
+            "win_rate": 0.33,
+        }
+
+    points = []
+    goals_for = []
+    goals_against = []
+    wins = 0
+
+    for match in recent:
+        gf = match["gf"]
+        ga = match["ga"]
+
+        goals_for.append(gf)
+        goals_against.append(ga)
+
+        if gf > ga:
+            points.append(3)
+            wins += 1
+        elif gf == ga:
+            points.append(1)
+        else:
+            points.append(0)
+
+    return {
+        "points": sum(points) / len(points),
+        "gf": sum(goals_for) / len(goals_for),
+        "ga": sum(goals_against) / len(goals_against),
+        "win_rate": wins / len(recent),
+    }
+
+
 def expected_elo(home_elo, away_elo):
     difference = (
         home_elo
@@ -115,7 +158,6 @@ def update_elo(
         home_goals - away_goals
     )
 
-    # Mild margin-of-victory adjustment
     if margin > 1:
         margin_multiplier = (
             1.0
@@ -144,14 +186,12 @@ def build_training_data(recent_matches=8):
             "No finished fixtures found."
         )
 
-    # Team history
     history = defaultdict(
         lambda: deque(
             maxlen=recent_matches
         )
     )
 
-    # Elo ratings
     elo = defaultdict(
         lambda: DEFAULT_ELO
     )
@@ -175,6 +215,20 @@ def build_training_data(recent_matches=8):
         away_form = form_stats(
             history,
             away_id,
+            recent_matches
+        )
+
+        home_home_form = venue_form_stats(
+            history,
+            home_id,
+            "home",
+            recent_matches
+        )
+
+        away_away_form = venue_form_stats(
+            history,
+            away_id,
+            "away",
             recent_matches
         )
 
@@ -248,15 +302,33 @@ def build_training_data(recent_matches=8):
                 "away_win_rate":
                     away_form["win_rate"],
 
+                "home_home_points_avg":
+                    home_home_form["points"],
+
+                "away_away_points_avg":
+                    away_away_form["points"],
+
+                "home_home_goals_for_avg":
+                    home_home_form["gf"],
+
+                "away_away_goals_for_avg":
+                    away_away_form["gf"],
+
+                "home_home_goals_against_avg":
+                    home_home_form["ga"],
+
+                "away_away_goals_against_avg":
+                    away_away_form["ga"],
+
+                "home_home_win_rate":
+                    home_home_form["win_rate"],
+
+                "away_away_win_rate":
+                    away_away_form["win_rate"],
+
                 "result": result,
             }
         )
-
-        # IMPORTANT:
-        # Update Elo only AFTER the match.
-        #
-        # This prevents future information
-        # from leaking into the prediction.
 
         new_home_elo, new_away_elo = update_elo(
             home_elo,
@@ -268,10 +340,10 @@ def build_training_data(recent_matches=8):
         elo[home_id] = new_home_elo
         elo[away_id] = new_away_elo
 
-        # Update historical form AFTER match
         history[home_id].append(
             {
                 "team_id": home_id,
+                "venue": "home",
                 "gf": home_goals,
                 "ga": away_goals,
             }
@@ -280,6 +352,7 @@ def build_training_data(recent_matches=8):
         history[away_id].append(
             {
                 "team_id": away_id,
+                "venue": "away",
                 "gf": away_goals,
                 "ga": home_goals,
             }
