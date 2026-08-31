@@ -1,30 +1,41 @@
-import pandas as pd
-from pathlib import Path
-from .db import connect
+from .api import APIFootball
+from .collect import upsert_fixtures
 
-def import_football_data(csv_path, league_id, season):
-    df=pd.read_csv(csv_path)
-    required={"HomeTeam","AwayTeam","FTHG","FTAG"}
-    missing=required-set(df.columns)
-    if missing: raise ValueError(f"Missing columns: {missing}")
-    with connect() as c:
-        team_cache={}
-        def tid(name):
-            if name not in team_cache:
-                row=c.execute("SELECT team_id FROM teams WHERE name=?", (name,)).fetchone()
-                if row: team_cache[name]=row[0]
-                else:
-                    c.execute("INSERT INTO teams(name) VALUES(?)",(name,))
-                    team_cache[name]=c.execute("SELECT last_insert_rowid()").fetchone()[0]
-            return team_cache[name]
-        for i,r in df.iterrows():
-            if pd.isna(r.FTHG) or pd.isna(r.FTAG): continue
-            home,away=tid(r.HomeTeam),tid(r.AwayTeam)
-            kickoff=pd.to_datetime(r.get("Date"),dayfirst=True,errors="coerce")
-            kickoff=(kickoff.isoformat() if pd.notna(kickoff) else f"{season}-{i+1:02d}-01T00:00:00")
-            fixture_id=int(f"{league_id}{season}{i:06d}")
-            c.execute("""INSERT OR REPLACE INTO fixtures
-            (fixture_id,league_id,season,kickoff,home_id,away_id,home_goals,away_goals,status)
-            VALUES(?,?,?,?,?,?,?,?,?)""",
-            (fixture_id,league_id,season,kickoff,home,away,int(r.FTHG),int(r.FTAG),"FT"))
-        c.commit()
+
+def collect_historical(leagues, seasons):
+    """
+    Download complete historical seasons for the configured leagues.
+
+    Example:
+        collect_historical(leagues, [2022, 2023, 2024])
+    """
+
+    api = APIFootball()
+    total = 0
+
+    for league in leagues:
+        league_id = league["id"]
+        league_name = league["name"]
+
+        for season in seasons:
+            print(
+                f"Collecting {league_name} "
+                f"(league={league_id}, season={season})..."
+            )
+
+            items = api.fixtures(
+                date=None,
+                league_id=league_id,
+                season=season
+            )
+
+            upsert_fixtures(items)
+
+            count = len(items)
+            total += count
+
+            print(f"  Added/updated: {count} fixtures")
+
+    print(f"\nTotal fixtures collected: {total}")
+
+    return total
